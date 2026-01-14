@@ -1,0 +1,111 @@
+---
+title: "Objective 0: Data Preparation"
+author: "Zoe Penno"
+date: "2025-07-03"
+output: html_document
+---
+
+# Objective 0: Data Preparation
+
+This script prepares inputs for downstream GLM and GAM analyses using only the three raw data files:
+1. data/raw_data/images_public.csv
+2. data/raw_data/stations_public.csv
+3. data/raw_data/tide_data.csv
+
+Outputs created here (in data/processed_data):
+- bear_count_motion.rds — site-level counts of black bear foraging days and camera effort (used by 01–04)
+- detections_with_tide.rds — detection-level data joined with hourly tide height (used by 08_tide_GAM)
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(here)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## 1. Load Data
+```{r load-data}
+images   <- read_csv(here("data", "raw_data", "images_public.csv"))
+stations <- read_csv(here("data", "raw_data", "stations_public.csv"))
+tides    <- read_csv(here("data", "raw_data", "tide_data.csv"), show_col_types = FALSE)
+```
+
+## 2. Clean Images and Join Stations
+```{r clean-images}
+exclude_species <- c("Homo sapiens", "Canis familiaris")
+
+images_clean <- images %>%
+  filter(!latin_name %in% exclude_species,
+         !is.na(latin_name),
+         latin_name != "Unknown species") %>%
+  mutate(
+    event_time = coalesce(ymd_hms(exif_timestamp, tz = "UTC"),
+                          ymd_hms(image_timestamp, tz = "UTC")),
+    event_hour = floor_date(event_time, "hour")
+  ) %>%
+  filter(!is.na(event_time)) %>%
+  left_join(stations, by = "station_id")
+```
+
+## 3. Prepare Hourly Tide Data
+```{r prep-tides}
+tide_hourly <- tides %>%
+  mutate(
+    tide_datetime = ymd_hm(Obs_date, tz = "UTC"),
+    tide_hour     = floor_date(tide_datetime, "hour")
+  ) %>%
+  transmute(tide_hour, tide_height = `SLEV(metres)`)
+```
+
+## 4. Attach Tide Height to Detections
+```{r attach-tide}
+detections_with_tide <- images_clean %>%
+  left_join(tide_hourly, by = c("event_hour" = "tide_hour")) %>%
+  mutate(
+    julian_day        = yday(event_time),
+    tide_bin          = cut(tide_height, breaks = c(-Inf, 1, 2.5, Inf),
+                            labels = c("Low", "Mid", "High"), include.lowest = TRUE),
+    bear_detected     = if_else(latin_name == "Ursus americanus", 1L, 0L),
+    foraging_detected = if_else(latin_name == "Ursus americanus" & behaviour == "foraging", 1L, 0L, missing = 0L)
+  )
+
+write_rds(detections_with_tide, here("data", "processed_data", "detections_with_tide.rds"))
+```
+
+## 5. Create bear_count_motion for GLM scripts
+```{r bear-count-motion}
+# Daily presence/absence of foraging bears
+bear_motion <- detections_with_tide %>%
+  filter(image_trigger == "Motion Detection",
+         foraging_detected == 1L) %>%
+  mutate(date = as_date(event_time)) %>%
+  group_by(station_id, date) %>%
+  summarise(foraging_detected = 1, .groups = "drop")
+
+# Camera effort (any image) by day
+active_days <- detections_with_tide %>%
+  mutate(date = as_date(event_time)) %>%
+  distinct(station_id, date) %>%
+  mutate(active = 1)
+
+# Join detections to effort and restrict to May–October
+bear_daily <- active_days %>%
+  left_join(bear_motion, by = c("station_id", "date")) %>%
+  mutate(foraging_detected = replace_na(foraging_detected, 0)) %>%
+  filter(month(date) %in% 5:10)
+
+# Aggregate to station-level counts
+bear_count_motion <- bear_daily %>%
+  group_by(station_id) %>%
+  summarise(
+    bear_days = sum(foraging_detected),
+    total_days = n(),
+    .groups = "drop"
+  ) %>%
+  left_join(stations, by = "station_id")
+
+write_rds(bear_count_motion, here("data", "processed_data", "bear_count_motion.rds"))
+```
+
+# End of Script

@@ -1,0 +1,154 @@
+---
+title: "02 GLM Model Selection and Inference"
+author: "Zoe Penno"
+date: "2025-06-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(glmmTMB)
+library(broom.mixed)
+library(AICcmodavg)
+library(here)
+library(patchwork)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Reproducibility
+set.seed(123)
+```
+
+# Introduction
+
+This script fits generalized linear models (GLMs) to identify predictors of black bear foraging use of intertidal habitat, using `bear_days` as the response variable. Candidate predictors are based on ecological rationale and site-level covariates.
+
+The workflow includes:
+- **Loading** in the data created in 01_data_exploration (bear_count_motion.rds).
+- **Fitting** a set of negative binomial GLMMs which represent competing hypotheses.
+- **Comparing** the competing hypotheses to determine the best fitting model.
+- **Summarizing** the top model and visualizing parameter estimates.
+- **Model diagnostics** to check assumptions and fit.
+- **Cross-validation** to assess predictive performance.
+
+The top model forms the foundation of the spatial inference presented in my thesis.
+
+# Data Import
+```{r data-import}
+bear_count_motion <- read_rds(here("data","processed_data", "bear_count_motion.rds"))
+```
+
+# Overdispersion Check
+
+Initial data exploration revealed overdispersion in a Poisson model, so we use negative binomial (nbinom2) family for all candidate models.
+
+All Candidate models will use bear_count_motion dataset. All models will have bear_days (count) as the response, total_days as an offset and family = negative binomial.
+
+Competing hypotheses:
+
+H1:Multifactor hypothesis (global model)
+Bear use is shaped by a combination of local resource availability and landscape-scale features, including substrate type, freshwater access, forest cover, and development.
+
+H2: Resource availability hypothesis
+Bear use is driven primarily by foraging-related resources such as substrate type, freshwater access, and proximity to salmon-bearing streams.
+
+H3: Landscape disturbance hypothesis
+Bear use is primarily influenced by landcover features that may facilitate or limit access to intertidal habitat, such as coniferous forest cover and human development.
+
+H4:Site-level habitat features hypothesis
+Bear use is shaped by physical characteristics of the site itself, including substrate and adjacent landcover (development and forest), without considering broader resource features like salmon.
+
+H5: Null Hypothesis
+Bear use is random with respect to environmental and landscape variables.
+
+```{r model-selection}
+# H1: Global model (Multifactor hypothesis)
+model_global <- glmmTMB(
+  bear_days ~ substrate_group + freshwater + prop_coastal_coniferous_forest + human_development + dist_to_salmon_km +
+    offset(log(total_days)),
+  family = nbinom2(),
+  data = bear_count_motion
+)
+
+# H2: Resource availability hypothesis
+model_resource <- glmmTMB(
+  bear_days ~ substrate_group + freshwater + dist_to_salmon_km +
+    offset(log(total_days)),
+  family = nbinom2(),
+  data = bear_count_motion
+)
+
+# H3: Landscape disturbance hypothesis
+model_disturbance <- glmmTMB(
+  bear_days ~ prop_coastal_coniferous_forest + human_development +
+    offset(log(total_days)),
+  family = nbinom2(),
+  data = bear_count_motion
+)
+
+# H4: Site-level habitat features hypothesis
+model_site_level <- glmmTMB(
+  bear_days ~ substrate_group + prop_coastal_coniferous_forest + human_development +
+    offset(log(total_days)),
+  family = nbinom2(),
+  data = bear_count_motion
+)
+
+# H5: Null hypothesis
+model_null <- glmmTMB(
+  bear_days ~ 1 + offset(log(total_days)),
+  family = nbinom2(),
+  data = bear_count_motion
+)
+
+# Post-hoc model analyzing the impact of shrubland (not included in main hypotheses)
+model_shrubland <- glmmTMB(
+  bear_days ~ prop_coastal_shrubland + human_development +
+    offset(log(total_days)),
+  family = nbinom2(),
+  data = bear_count_motion
+)
+```
+
+# Compare the models
+```{r model-comparison}
+model_set <- list(
+  H1_global = model_global,
+  H2_resource = model_resource,
+  H3_disturbance = model_disturbance,
+  H4_site_level = model_site_level,
+  H5_null = model_null,
+  H6_shrubland = model_shrubland
+)
+
+# Print full AIC table for transparency
+aic_table <- aictab(model_set)
+print(aic_table)
+
+# Summarize the best model
+if (length(model_set) > 0) {
+  top_models <- model_set[which.min(sapply(model_set, AIC))]
+  print(summary(top_models[[1]]))
+}
+
+# Print tidy effect size table for supplement
+if (exists("top_models")) {
+  broom.mixed::tidy(top_models[[1]], conf.int = TRUE) %>%
+    filter(effect == "fixed") %>%
+    select(term, estimate, std.error, conf.low, conf.high, p.value) %>%
+    print()
+}
+```
+
+# Save best model object for reproducibility
+```{r save-model}
+# Save the best model for later use
+best_model <- top_models[[1]]
+
+saveRDS(best_model, here("data", "processed_data", "glmm_best_model.rds"))
+```
+
+
+# Session Info
+```{r session-info, echo=FALSE}
+sessionInfo()
+```

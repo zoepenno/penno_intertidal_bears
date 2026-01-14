@@ -1,0 +1,238 @@
+---
+title: "GLMM Model Diagnostics"
+author: "Zoe Penno"
+date: "2025-09-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(glmmTMB)
+library(here)
+library(spdep)
+library(DHARMa)
+library(knitr)
+# Reproducibility
+set.seed(123)
+```
+
+# Data Import and Model Setup
+```{r data-import}
+# Load main data and best model from 02_glmm_model_selection
+bear_count_motion <- read_rds(here("data", "processed_data", "bear_count_motion.rds"))
+best_model <- readRDS(here("data", "processed_data", "glmm_best_model.rds"))
+```
+
+# Model Diagnostics
+```{r diagnostics}
+# Simulated residuals
+res <- simulateResiduals(best_model, n = 1000)
+
+# residuals vs fitted
+p_res_fit <- plotResiduals(res, rank = TRUE) 
+png(here("figures","Fig_S1_residuals_vs_fitted.png"), width=1800, height=1400, res=200)
+plotResiduals(res, rank = TRUE)
+dev.off()
+
+# QQ / uniformity
+png(here("figures","Fig_S2_QQ_uniformity.png"), width=1800, height=1400, res=200)
+plotQQunif(res)
+dev.off()
+
+# Tests table (for appended Table)
+ks   <- testUniformity(res)
+disp <- testDispersion(res)
+zi   <- testZeroInflation(res)
+diag_tab <- data.frame(
+  test      = c("Uniformity (KS)", "Dispersion", "Zero inflation"),
+  statistic = c(unname(ks$statistic), unname(disp$statistic), unname(zi$statistic)),
+  p_value   = c(ks$p.value, disp$p.value, zi$p.value)
+)
+write.csv(diag_tab, here("figures","Table_S1_diagnostics.csv"), row.names = FALSE)
+
+# predicted vs observed (rates, since model used an offset)
+pred_counts <- predict(best_model, type = "response")
+df_po <- transform(
+  bear_count_motion,
+  pred_rate = pred_counts / total_days,
+  obs_rate  = bear_days   / total_days
+)
+
+p_pred_obs <- ggplot(df_po, aes(x = pred_rate, y = obs_rate)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(x = "Predicted rate (foraging days / total days)",
+       y = "Observed rate",
+       title = "Predicted vs observed (site-level rates)") +
+  theme_minimal(base_size = 14)
+
+ggsave(here("figures","Fig_S3_pred_vs_obs.png"), p_pred_obs, width = 7, height = 5, dpi = 300)
+
+```
+
+# Spatial autocorrelation
+# Note - this part is not possible to run without latitude and longitude (images_public has location data removed due to privacy)
+```{r spatial-autocorrelation}
+# Extract residuals from model
+resids_nb <- residuals(best_model, type = "pearson")
+
+# Run Moran's I
+coords <- bear_count_motion %>%
+  distinct(station_id, longitude, latitude) %>%
+  select(longitude, latitude)
+
+coords_matrix <- as.matrix(coords)
+nb <- knn2nb(knearneigh(coords_matrix, k = 4))
+listw <- nb2listw(nb, style = "W")
+
+moran_nb <- moran.test(resids_nb, listw)
+print(moran_nb)
+```
+
+# LOSO cross-validation to assess predictive performance
+```{r loso-cv}
+dat <- bear_count_motion %>%
+  filter(total_days > 0) %>%
+  mutate(station_id = factor(station_id))
+
+# Define formulas for candidate models (matching 02_glmm_model_selection)
+cv_forms <- list(
+  H1_global        = bear_days ~ substrate_group + freshwater + prop_coastal_coniferous_forest + human_development + dist_to_salmon_km + offset(log(total_days)),
+  H2_resource      = bear_days ~ substrate_group + freshwater + dist_to_salmon_km + offset(log(total_days)),
+  H3_disturbance   = bear_days ~ prop_coastal_coniferous_forest + human_development + offset(log(total_days)),
+  H4_site_level    = bear_days ~ substrate_group + prop_coastal_coniferous_forest + human_development + offset(log(total_days)),
+  H5_null          = bear_days ~ 1 + offset(log(total_days)),
+  H3a_dev_only     = bear_days ~ human_development + offset(log(total_days)),
+  H3b_forest_only  = bear_days ~ prop_coastal_coniferous_forest + offset(log(total_days))
+)
+
+# LOSO folds: one station per fold
+stations <- levels(dat$station_id)
+folds <- as.list(stations)
+
+score_model <- function(train, test, form){
+  train <- droplevels(train)
+  # align factor levels between train/test
+  fac_cols <- names(Filter(is.factor, train))
+  for (col in fac_cols) test[[col]] <- factor(test[[col]], levels = levels(train[[col]]))
+
+  fit  <- glmmTMB(form, family = nbinom2(), data = train)
+
+  mu   <- predict(fit, newdata = test, type = "response")  # predicted counts
+  size <- sigma(fit)                                       # NB2 'size' (theta)
+
+  # Predictive log-likelihood on held-out station(s)
+  pll  <- sum(dnbinom(test$bear_days, size = size, mu = mu, log = TRUE))
+
+  # RMSE of the rate (bear_days per active day)
+  pred_rate <- mu / test$total_days
+  obs_rate  <- test$bear_days / test$total_days
+  rmse_rate <- sqrt(mean((pred_rate - obs_rate)^2))
+
+  c(pll = pll, rmse_rate = rmse_rate)
+}
+
+# Run LOSO for each model
+cv_raw_loso <- purrr::imap_dfr(cv_forms, function(form, mname){
+  purrr::map_dfr(seq_along(folds), function(k){
+    held <- folds[[k]]
+    train_dat <- dplyr::filter(dat, station_id != held)
+    test_dat  <- dplyr::filter(dat, station_id == held)
+    as.data.frame(t(score_model(train_dat, test_dat, form))) |>
+      mutate(model = mname, fold_station = held)
+  })
+})
+
+# Summarize LOSO performance
+cv_loso_table <- cv_raw_loso %>%
+  group_by(model) %>%
+  summarise(mean_PLL  = mean(pll),  sd_PLL  = sd(pll),
+            mean_RMSE = mean(rmse_rate), sd_RMSE = sd(rmse_rate),
+            .groups = "drop") %>%
+  arrange(desc(mean_PLL))  # higher PLL = better
+
+knitr::kable(cv_loso_table, digits = 3,
+             caption = "LOSO CV by station (NB predictive log-likelihood & RMSE of rate). Higher PLL, lower RMSE are better.")
+
+# Focused table
+keep_models <- c("H5_null","H3a_dev_only","H3b_forest_only","H3_disturbance")
+kable(cv_loso_table %>% filter(model %in% keep_models) %>%
+        arrange(desc(mean_PLL)),
+      digits = 3,
+      caption = "LOSO CV (focused): null vs simple baselines vs disturbance.")
+
+```
+
+# Pairwise, per-station deltas vs null
+```{r}
+# Pairwise, per-station deltas vs null
+deltas <- cv_raw_loso %>%
+  select(model, fold_station, pll, rmse_rate) %>%
+  tidyr::pivot_wider(names_from = model, values_from = c(pll, rmse_rate))
+
+# Helper to summarize difference model - null
+summ_diff <- function(x, y) {
+  diff <- x - y
+  list(mean = mean(diff, na.rm=TRUE),
+       sd   = sd(diff, na.rm=TRUE),
+       t    = t.test(diff)$statistic[[1]],
+       p    = t.test(diff)$p.value)
+}
+
+out_forest  <- summ_diff(deltas$pll_H3b_forest_only, deltas$pll_H5_null)
+out_disturb <- summ_diff(deltas$pll_H3_disturbance,  deltas$pll_H5_null)
+out_devonly <- summ_diff(deltas$pll_H3a_dev_only,    deltas$pll_H5_null)
+
+out_forest_rmse  <- summ_diff(-deltas$rmse_rate_H3b_forest_only, -deltas$rmse_rate_H5_null) # negative so "higher is better"
+out_disturb_rmse <- summ_diff(-deltas$rmse_rate_H3_disturbance,  -deltas$rmse_rate_H5_null)
+
+out_forest; out_disturb; out_devonly; out_forest_rmse; out_disturb_rmse
+
+```
+
+
+# Calibration Plot
+```{r calibration-plot, fig.width=7, fig.height=5}
+# Calibration plot for best model
+final_fit <- best_model
+pred_counts <- predict(final_fit, type = "response")
+pred_rate   <- pred_counts / bear_count_motion$total_days
+obs_rate    <- bear_count_motion$bear_days / bear_count_motion$total_days
+
+# Bin predictions into deciles and compute mean observed vs predicted
+deciles <- cut(pred_rate,
+               breaks = quantile(pred_rate, probs = seq(0,1,0.1), na.rm = TRUE),
+               include.lowest = TRUE)
+calib <- aggregate(cbind(obs_rate, pred_rate) ~ deciles, FUN = mean)
+
+calib_plot <- ggplot(calib, aes(x = pred_rate, y = obs_rate)) +
+  geom_point(size = 2, color = "#0072B2") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    x = "Predicted rate (per active day, binned deciles)",
+    y = "Observed rate (per active day)"
+  ) +
+  theme_classic(base_size = 16) +
+  theme(
+    axis.title = element_text(face = "plain", size = 16),
+    axis.text = element_text(color = "black", size = 14),
+    axis.text.y = element_text(margin = margin(r = 10)),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    plot.margin = margin(10, 10, 10, 10)
+  )
+
+print(calib_plot)
+
+ggsave(
+  here("figures", "calibration_plot.png"),
+  plot = calib_plot,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
+```
+
+# Session Info
+```{r session-info, echo=FALSE}
+sessionInfo()
+```

@@ -1,0 +1,202 @@
+---
+title: "01 Data Exploration and Cleaning"
+author: "Zoe Penno"
+date: "2025-06-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(car)
+library(corrplot)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Reproducibility
+set.seed(123)
+```
+
+
+# Introduction
+
+This script performs exploratory data analysis and visualization for the Barkley Sound black bear camera trap study. It loads the processed `bear_count_motion.rds` dataset (created in 00_data_preparation.Rmd) and generates summary statistics and quick plots to explore site-level covariates and bear foraging patterns.
+
+The workflow includes:
+
+- **Summarizing** detection counts and camera effort across stations.
+- **Visualizing** the distribution of key environmental variables (substrate type, development, freshwater, forest cover, salmon distance).
+- **Checking collinearity** among predictors using VIF and correlation analysis.
+- **Documenting camera operability** by site and over time.
+
+# Load bear_count_motion produced in 00_data_preparation
+```{r}
+bear_count_motion <- read_rds(here("data", "processed_data", "bear_count_motion.rds"))
+
+# Print summary table for supplement
+summary_tbl <- bear_count_motion %>%
+  summarise(
+    mean_bear_days = mean(bear_days),
+    sd_bear_days = sd(bear_days),
+    min_bear_days = min(bear_days),
+    max_bear_days = max(bear_days),
+    n_stations = n()
+  )
+print(summary_tbl)
+```
+
+
+# Quick Plots of Key Variables
+```{r plots, fig.width=7, fig.height=4}
+# Total bear detections by station
+ggplot(
+  bear_count_motion,
+  aes(
+    x = reorder(as.factor(station_id), -bear_days),
+    y = bear_days
+  )
+) +
+  geom_col(fill = "#333333") +
+  labs(
+    x = "Station",
+    y = "Total Bear Detections (May–Oct)",
+    title = "Total Bear Detections by Station"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Distribution of substrate types
+ggplot(bear_count_motion, aes(x = substrate_group, fill = substrate_group)) +
+  geom_bar() +
+  labs(x = "Substrate Type", y = "Count", title = "Distribution of Substrate Types") +
+  theme(legend.position = "none")
+
+# Human disturbance
+ggplot(bear_count_motion, aes(x = factor(human_development))) +
+  geom_bar(fill = "#b22222") +
+  labs(x = "Human Disturbance (0=No, 1=Yes)", y = "Count", title = "Human Disturbance by Station")
+
+# Distribution of freshwater presence
+ggplot(bear_count_motion, aes(x = factor(freshwater))) +
+  geom_bar(fill = "#1f77b4") +
+  labs(x = "Freshwater Presence (0=No, 1=Yes)", y = "Count", title = "Freshwater Presence by Station") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Coniferous forest cover per site
+ggplot(bear_count_motion, aes(x = reorder(as.factor(station_id), prop_coastal_coniferous_forest), y = prop_coastal_coniferous_forest)) +
+    geom_col(fill = "#228B22") +
+    labs(
+        x = "Station",
+        y = "Proportion Coniferous Forest",
+        title = "Coniferous Forest Cover by Station"
+    ) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Distance to salmon streams
+ggplot(bear_count_motion, aes(x = reorder(as.factor(station_id), dist_to_salmon_km), y = dist_to_salmon_km)) +
+    geom_col(fill = "#1f77b4") +
+    labs(
+        x = "Station",
+        y = "Distance to Salmon Streams (m)",
+        title = "Distance to Salmon Streams by Station"
+    ) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+# Assumption checks before modeling: collinearity and distribution checks
+```{r collinearity-checks}
+# Check for collinearity among predictors using Variance Inflation Factor (VIF)
+bear_count_motion$substrate_group <- as.factor(bear_count_motion$substrate_group)
+
+table(bear_count_motion$substrate_group)
+
+# Choose only numeric and factor predictors
+vif_data <- bear_count_motion %>%
+  select(
+    bear_days,
+    dist_to_salmon_km,
+    prop_coastal_coniferous_forest,
+    prop_coastal_shrubland,
+    prop_coastal_meadow_grassland,
+    freshwater,
+    human_development,
+    substrate_group
+  ) %>%
+  drop_na()
+
+# Fit a linear model (VIF requires lm(), not glm)
+vif_model <- lm(bear_days ~ ., data = vif_data)
+
+# Compute VIF
+vif_results <- car::vif(vif_model)
+print(vif_results)
+
+# Correlation matrix for numeric predictors
+cont_vars <- bear_count_motion %>%
+  select(
+    dist_to_salmon_km,
+    starts_with("prop_")
+  ) %>%
+  drop_na()
+
+cor_matrix <- cor(cont_vars)
+round(cor_matrix, 2)
+
+# Visualize correlation matrix
+corrplot(cor(cont_vars, use = "complete.obs"), method = "color", addCoef.col = "black")
+```
+Based on the VIF results and correlation matrix, we can see that the `prop_coastal_coniferous_forest` and `prop_coastal_shrubland` variables exhibit multicollinearity. Only `prop_coastal_coniferous_forest` and `prop_coastal_meadow_grassland` will be used in the model.
+
+# Camera Operability Information
+```{r camera-operability}
+# Load raw images data to assess camera operability
+images <- read_csv(here("data", "raw_data", "images_public.csv")) 
+
+# Add date column for effort tracking
+images_with_date <- images %>%
+  mutate(date = as_date(exif_timestamp))
+
+# Per-station operability summary (unique active days)
+camera_summary <- images_with_date %>%
+  distinct(station_id, date) %>%
+  group_by(station_id) %>%
+  summarise(
+    installation_date = min(date, na.rm = TRUE),
+    removal_date      = max(date, na.rm = TRUE),
+    total_camera_days = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(station_id)
+
+# Summary statistics
+total_effort_days <- sum(camera_summary$total_camera_days)
+mean_effort_days  <- mean(camera_summary$total_camera_days)
+range_effort_days <- range(camera_summary$total_camera_days)
+
+cat(sprintf(
+  "Total camera-days of effort: %d\nMean (per site): %.1f  |  Range: %d–%d\nNumber of sites: %d\n",
+  total_effort_days, mean_effort_days, range_effort_days[1], range_effort_days[2], nrow(camera_summary)
+))
+
+# Effort by month
+effort_by_month <- images_with_date %>%
+  distinct(station_id, date) %>%
+  mutate(month = floor_date(date, "month")) %>%
+  count(month, name = "camera_days") %>%
+  arrange(month)
+
+# Per-station-per-month effort
+effort_site_month <- images_with_date %>%
+  distinct(station_id, date) %>%
+  mutate(month = floor_date(date, "month")) %>%
+  count(station_id, month, name = "camera_days") %>%
+  arrange(station_id, month)
+
+# Save effort summaries
+write_csv(camera_summary, here("data", "processed_data", "camera_operability_by_site.csv"))
+write_csv(effort_by_month, here("data", "processed_data", "effort_by_month.csv"))
+write_csv(effort_site_month, here("data", "processed_data", "effort_by_site_month.csv"))
+```
+
+# Session Info
+```{r session-info, echo=FALSE}
+sessionInfo()
+```

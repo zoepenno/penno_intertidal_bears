@@ -1,0 +1,221 @@
+---
+title: "05 GAM Models: Seasonal and Tide"
+author: "Zoe Penno"
+date: "2025-06-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(mgcv)
+library(gratia)
+library(here)
+library(patchwork)
+library(broom)
+library(glmmTMB)
+library(performance)
+library(MuMIn)
+library(yardstick)
+library(DHARMa)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Reproducibility
+set.seed(123)
+```
+
+# Overview
+
+This combined script fits two GAM analyses:
+- **Seasonal GAM (foraging only)** using raw images to show temporal trends across stations.
+- **Tide GAM (bear presence)** using detections_with_tide.rds to assess tide and seasonal effects.
+
+# Part A: Seasonal GAM (foraging only)
+
+## Data prep
+```{r seasonal-data}
+images <- read_csv(here("data", "raw_data", "images_public.csv"))
+
+# Active camera days during peak season
+active_days <- images %>%
+  mutate(date = as_date(exif_timestamp)) %>%
+  filter(month(date) %in% 5:10) %>%
+  distinct(station_id, date) %>%
+  mutate(station_id = as.factor(station_id))
+
+# Days with foraging detections
+foraging_days <- images %>%
+  filter(image_trigger == "Motion Detection",
+         latin_name == "Ursus americanus",
+         behaviour == "foraging") %>%
+  mutate(date = as_date(exif_timestamp)) %>%
+  distinct(station_id, date)
+
+# Binary response per day
+daily_df <- active_days %>%
+  left_join(foraging_days %>% mutate(foraging_flag = 1), by = c("station_id", "date")) %>%
+  mutate(
+    foraging_detected = if_else(is.na(foraging_flag), 0, 1),
+    julian_day = yday(date),
+    station_id = as.factor(station_id)
+  ) %>%
+  select(station_id, date, julian_day, foraging_detected)
+```
+
+## Fit seasonal GAM
+```{r seasonal-gam}
+gam_season <- gam(
+  foraging_detected ~ s(julian_day, by = station_id) + s(station_id, bs = "re"),
+  data = daily_df,
+  family = binomial
+)
+summary(gam_season)
+```
+
+## Plot significant smooths
+```{r seasonal-plots, fig.width=7, fig.height=6}
+sig_smooths <- as.data.frame(summary(gam_season)$s.table) %>%
+  mutate(term = rownames(.)) %>%
+  filter(grepl("s\\(julian_day\\):station_id", term), `p-value` < 0.05)
+
+sig_sites <- gsub("s\\(julian_day\\):station_id", "", sig_smooths$term)
+
+if (length(sig_sites) > 0) {
+  all_pred_grid <- map_dfr(sig_sites, function(site) {
+    pred_grid <- tibble(
+      julian_day = seq(120, 305, by = 1),
+      station_id = factor(site, levels = levels(daily_df$station_id))
+    )
+    preds <- predict(gam_season, newdata = pred_grid, type = "link", se.fit = TRUE)
+    pred_grid %>%
+      mutate(
+        fit = plogis(preds$fit),
+        lower = plogis(preds$fit - 1.96 * preds$se.fit),
+        upper = plogis(preds$fit + 1.96 * preds$se.fit),
+        station_label = str_remove(site, "^BARKLEYSOUND")
+      )
+  })
+
+  p_faceted <- ggplot(all_pred_grid, aes(x = julian_day, y = fit)) +
+    geom_ribbon(aes(ymin = lower, ymax = upper), fill = "#A8D5BA", alpha = 0.5) +
+    geom_line(color = "#1b9e77", linewidth = 1) +
+    labs(x = "Julian Day", y = "Probability of Foraging") +
+    facet_wrap(~station_label, ncol = 2) +
+    theme_classic(base_size = 14) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      panel.grid.minor = element_blank()
+    )
+
+  print(p_faceted)
+  ggsave(here("figures", "gam_seasonal_faceted.png"), plot = p_faceted,
+         width = 10, height = 5, dpi = 300)
+} else {
+  message("No significant site-specific Julian day smooths to plot.")
+}
+```
+
+# Part B: Tide GAM (bear presence)
+
+## Load tide-joined detections
+```{r tide-data}
+detections_with_tide <- read_rds(here("data", "processed_data", "detections_with_tide.rds"))
+
+dat0 <- detections_with_tide %>%
+  filter(!is.na(tide_height), !is.na(julian_day), !is.na(station_id)) %>%
+  mutate(
+    bear_presence = as.integer(bear_detected > 0),
+    julian_day    = as.numeric(julian_day),
+    station_id    = factor(station_id)
+  )
+```
+
+## Fit tide GAM
+```{r tide-gam}
+gam_tide <- gam(
+  bear_presence ~ s(tide_height, k = 5) + s(julian_day, k = 6) + s(station_id, bs = "re"),
+  family = binomial,
+  data = dat0,
+  method = "REML"
+)
+summary(gam_tide)
+
+# Reduced model without tide
+gam_no_tide <- gam(
+  bear_presence ~ s(julian_day, k = 6) + s(station_id, bs = "re"),
+  family = binomial,
+  data = dat0,
+  method = "REML"
+)
+
+anova(gam_no_tide, gam_tide, test = "Chisq")
+AIC(gam_no_tide, gam_tide)
+```
+
+## Diagnostics
+```{r tide-diagnostics}
+gam.check(gam_tide)
+res_gam <- simulateResiduals(gam_tide, n = 1000)
+plot(res_gam)
+testDispersion(res_gam)
+testZeroInflation(res_gam)
+```
+
+## Effect plots
+```{r tide-plots, fig.width=7, fig.height=4}
+tide_seq <- seq(min(dat0$tide_height, na.rm = TRUE), max(dat0$tide_height, na.rm = TRUE), length.out = 200)
+season_seq <- seq(min(dat0$julian_day, na.rm = TRUE), max(dat0$julian_day, na.rm = TRUE), length.out = 200)
+
+newdat_tide <- tibble(
+  tide_height = tide_seq,
+  julian_day  = median(dat0$julian_day, na.rm = TRUE),
+  station_id  = levels(dat0$station_id)[1]
+)
+newdat_season <- tibble(
+  tide_height = median(dat0$tide_height, na.rm = TRUE),
+  julian_day  = season_seq,
+  station_id  = levels(dat0$station_id)[1]
+)
+
+pred_tide <- predict(gam_tide, newdata = newdat_tide, type = "link", se.fit = TRUE)
+pred_season <- predict(gam_tide, newdata = newdat_season, type = "link", se.fit = TRUE)
+
+plotdat_tide <- tibble(
+  x = tide_seq,
+  fit = plogis(pred_tide$fit),
+  lower = plogis(pred_tide$fit - 1.96 * pred_tide$se.fit),
+  upper = plogis(pred_tide$fit + 1.96 * pred_tide$se.fit)
+)
+
+plotdat_season <- tibble(
+  x = season_seq,
+  fit = plogis(pred_season$fit),
+  lower = plogis(pred_season$fit - 1.96 * pred_season$se.fit),
+  upper = plogis(pred_season$fit + 1.96 * pred_season$se.fit)
+)
+
+p_tide <- ggplot(plotdat_tide, aes(x = x, y = fit)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = "#1f78b4", alpha = 0.18, color = NA) +
+  geom_line(color = "#1f78b4", linewidth = 1) +
+  geom_rug(data = dat0, aes(x = tide_height), inherit.aes = FALSE, sides = "b",
+           length = unit(0.02, "npc"), alpha = 0.6, colour = "black") +
+  labs(x = "Tide height (m)", y = "P(Bear presence)") +
+  theme_classic(base_size = 13) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
+
+p_season <- ggplot(plotdat_season, aes(x = x, y = fit)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = "#e31a1c", alpha = 0.18, color = NA) +
+  geom_line(color = "#e31a1c", linewidth = 1) +
+  geom_rug(data = dat0, aes(x = julian_day), inherit.aes = FALSE, sides = "b",
+           length = unit(0.02, "npc"), alpha = 0.6, colour = "black") +
+  labs(x = "Julian day", y = "P(Bear presence)") +
+  theme_classic(base_size = 13) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
+
+p_tide
+p_season
+
+ggsave(here("figures", "gam_effect_tide_height.png"), plot = p_tide, width = 7, height = 5, dpi = 300)
+ggsave(here("figures", "gam_effect_season.png"), plot = p_season, width = 7, height = 5, dpi = 300)
+```
+
+# End of Script

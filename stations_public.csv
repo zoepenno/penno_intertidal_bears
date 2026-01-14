@@ -1,0 +1,40 @@
+station_id,installation_date,removal_date,sensor_height,camera_angle,cardinal_angle,feature_type,primary_substrate,secondary_substrate,adjacent_forest,freshwater,prop_coastal_coniferous_forest,prop_coastal_shrubland,prop_coastal_meadow_grassland,prop_rocky_outcrops_intertidal,prop_developed_human_modified,prop_ocean_freshwater,substrate_group,human_development,dist_to_salmon_km
+BS01,2024-07-26,2024-12-02,1,175,S,tree,boulder,bedrock,second growth,FALSE,0.374418605,0.18255814,0.059302326,0,0,0.38372093,coarse,0,16.8492254
+BS02,2024-04-10,2024-12-03,1.8,NA,N,stump,sand,gravel,old-second growth,TRUE,0.57424594,0,0,0,0,0.42575406,fine,0,2.945128314
+BS03,2024-04-11,2024-12-02,1.5,165,SE,fallen tree,cobble,pebble,old growth,FALSE,0.506993007,0.008158508,0.003496503,0,0,0.481351981,intermediate-coarse,0,15.39078695
+BS04,2024-03-18,2024-12-03,1.5,344,N,stump,pebble,cobble,second growth,TRUE,0.3728223,0.084785134,0.016260163,0,0,0.526132404,intermediate-fine,0,0
+BS05,2024-03-18,2024-12-03,1.1,78,E,fallen cedar,cobble,sand,second growth,FALSE,0.520881671,0,0,0,0,0.479118329,intermediate-coarse,0,4.909091694
+BS06,2024-04-09,2024-12-03,2.9,98,E,dead log,gravel,cobble,second growth,TRUE,0.66627907,0.036046512,0.025581395,0,0,0.272093023,intermediate-fine,0,1.348242907
+BS07,2024-04-09,2024-12-03,0.69,90,E,On post on beach,Cobble,Pebble,old growth,TRUE,0.496519722,0.141531323,0.003480278,0,0,0.358468677,intermediate-coarse,0,10.92152458
+BS08,2024-04-10,2024-12-03,1.6,200,S,stump,pebble,gravel,old growth,TRUE,0.475524476,0.040792541,0,0,0,0.483682984,intermediate-fine,0,6.336853079
+BS09,2024-04-11,2024-12-02,1.7,157,S,dead log,silt/mud/fine/organic,cobble,old growth,FALSE,0.459302326,0.109302326,0.001162791,0,0,0.430232558,fine,0,13.06040517
+BS10,2024-04-11,2024-12-02,1.5,137,SE,fallen tree,boulder,cobble,old growth,FALSE,0.277712952,0.190198366,0.016336056,0,0,0.515752625,coarse,0,12.02096668
+BS11,2024-04-12,2024-12-02,1.6,207,SW,tree,cobble,silt/mud/fine/organic,old growth,FALSE,0.554006969,0,0.00232288,0,0,0.443670151,intermediate-coarse,0,10.41734522
+BS12,2024-04-10,2024-12-04,1.1,232,SW,tree,silt/mud/fine/organic,pebble,second growth,TRUE,0.34032634,0.096736597,0.205128205,0.03030303,0,0.327505828,fine,0,11.39912547
+BS13,2024-04-10,2024-12-04,1.5,315,NW,tree,gravel,silt/mud/fine/organic,second growth,FALSE,0.602088167,0.004640371,0,0,0,0.393271462,intermediate-fine,0,11.80639904
+BS14,2024-04-11,2024-12-02,NA,NA,NA,dead log,cobble,gravel,old growth,FALSE,0.273045508,0.259043174,0.120186698,0,0.046674446,0.301050175,intermediate-coarse,1,8.358574789
+BS15,2024-04-12,2024-12-02,1.1,30,NE,tree,pebble,sand,second growth,FALSE,0.226744186,0.288372093,0.008139535,0,0,0.476744186,intermediate-fine,0,9.132715095
+BS16,2024-03-18,2024-12-03,1.5,5,N,stump,boulder,cobble,old growth,FALSE,0.296167247,0.134727062,0.059233449,0.009291521,0,0.50058072,coarse,0,8.249244783
+BS17,2024-04-12,2024-12-02,1.1,213,SW,tree,pebble,cobble,old growth,TRUE,0.481395349,0.072093023,0.009302326,0,0,0.437209302,intermediate-fine,0,9.764450374
+BS18,2024-04-11,2024-12-02,1.6,310,NW,log,boulder,cobble,old growth,FALSE,0.345750873,0.01862631,0,0,0,0.635622817,coarse,0,10.2230493
+BS19,2024-04-12,2024-12-02,1.5,170,S,stump,boulder,cobble,old growth,TRUE,0.428904429,0.062937063,0,0,0,0.508158508,coarse,0,10.45857461
+BS20,2024-04-12,2024-12-02,1.2,224,SW,tree,pebble,sand,old growth,FALSE,0.645348837,0.056976744,0.038372093,0,0,0.259302326,intermediate-fine,0,11.77324503
+BS21,2024-04-12,2024-12-02,1,270,W,tree,cobble,pebble,old growth,FALSE,0.480232558,0,0,0,0,0.519767442,intermediate-coarse,0,11.43097441
+BS22,2024-03-18,2024-12-03,1.8,330,NW,tree,boulder,cobble,old growth,FALSE,0.324825986,0.084686775,0,0,0,0.590487239,coarse,0,9.171258792
+BS23,2024-04-09,2024-12-03,4.3,180,S,stump/dead head,pebble,gravel,"clearcut close to one side, second growth",FALSE,0.459302326,0.086046512,0.053488372,0,0,0.401162791,intermediate-fine,0,5.908146996
+BS24,2024-04-12,2024-12-02,1.5,320,NW,stump,pebble,cobble,old growth,TRUE,0.635939323,0.091015169,0.001166861,0,0,0.271878646,intermediate-fine,0,12.00438939
+BS25,2024-04-12,2024-12-02,1.5,215,SW,tree,pebble,cobble,old growth,TRUE,0.444574096,0.143523921,0.050175029,0,0,0.361726954,intermediate-fine,0,12.71382383
+BS26,2024-03-18,2024-12-03,1.8,303,NW,tree,silt/mud/fine/organic,grassy,old growth,TRUE,0.712121212,0.012820513,0.001165501,0.003496503,0.038461538,0.231934732,fine,1,5.19378164
+BS27,2024-03-18,2024-12-03,1.6,0,N,tree,boulder,cobble,old growth,FALSE,0.513418903,0.018669778,0,0,0,0.467911319,coarse,0,9.50526139
+BS28,2024-04-10,2024-12-03,2.5,329,NW,dead log,silt/mud/fine/organic,pebble,old growth,TRUE,0.49187935,0.033642691,0.134570766,0.004640371,0,0.335266821,fine,0,2.631415614
+BS29,2024-04-09,2024-12-03,2,5,N,dead log,cobble,gravel,second growth,TRUE,0.192757009,0.280373832,0.021028037,0,0.039719626,0.466121495,intermediate-coarse,1,2.96116284
+BS30,2024-03-18,2024-12-03,2.5,330,NW,stump,silt/mud/fine/organic,silt/mud/fine/organic,second growth,TRUE,0.350754936,0.12195122,0.031358885,0.011614402,0.051103368,0.433217189,fine,1,1.692815196
+BS31,2024-04-09,2024-12-03,2.7,90,E,stump/dead head,cobble,pebble,old growth,FALSE,0.268292683,0.053426249,0.091753775,0,0,0.586527294,intermediate-coarse,0,7.204862846
+BS32,2024-04-10,2024-12-03,1.7,169,S,tree,silt/mud/fine/organic,gravel,second growth,TRUE,0.615204678,0.107602339,0,0,0,0.277192982,fine,0,7.429352447
+BS33,2024-04-10,2024-12-03,1,186,S,dead log,silt/mud/fine/organic,gravel,second growth,TRUE,0.518735363,0.06557377,0.235362998,0,0,0.180327869,fine,0,8.469619212
+BS34,2024-04-10,2024-12-03,1.9,145,SE,tree,gravel,pebble,old-second growth,FALSE,0.322843823,0.146853147,0.01981352,0,0,0.51048951,intermediate-fine,0,8.531963715
+BS35,2024-04-10,2024-12-03,2.7,300,NW,tree,silt/mud/fine/organic,sand,old growth,TRUE,0.682242991,0.052570093,0,0,0.047897196,0.21728972,fine,1,7.016499425
+BS36,2024-07-26,2024-12-03,1.5,NA,NA,tree,gravel,mud,second growth,FALSE,0.368298368,0.055944056,0.044289044,0,0.034965035,0.496503497,intermediate-fine,1,6.929035262
+BS37,2024-04-11,2024-12-02,1.5,220,SE,stump,cobble,pebble,old growth,FALSE,0.578271028,0,0,0,0,0.421728972,intermediate-coarse,0,12.71880939
+BS38,2024-04-11,2024-12-03,1.4,230,SW,tree branch,boulder/bedrock,cobble,old growth,FALSE,0.613504075,0,0,0,0,0.386495925,coarse,0,12.28785854
+BS39,2024-04-11,NA,2,240,SW,dead log,cobble,pebble,old growth,TRUE,0.694186047,0,0,0,0,0.305813953,intermediate-coarse,0,14.17459993
